@@ -189,21 +189,27 @@ void GameOverlay::Draw() {
             switch (var->Type) {
                 case ConsoleVariableType::Float:
 
-                    TextDraw(30, textY, true, color, "%s %.2f", text, var->Float);
+                    TextDraw(30, textY, true, color, "%s %.2f", text, var->GetFloat());
                     break;
                 case ConsoleVariableType::Integer:
-                    TextDraw(30, textY, true, color, "%s %d", text, var->Integer);
+                    TextDraw(30, textY, true, color, "%s %d", text, var->GetInteger());
                     break;
                 case ConsoleVariableType::String:
-                    TextDraw(30, textY, true, color, "%s %s", text, var->String.c_str());
+                    TextDraw(30, textY, true, color, "%s %s", text, var->GetString());
                     break;
                 case ConsoleVariableType::Color:
-                    TextDraw(30, textY, true, color, "%s (%u, %u, %u, %u)", text, var->Color.r, var->Color.g,
-                             var->Color.b, var->Color.a);
+                {
+                    Color_RGBA8 varColor = var->GetColor();
+                    TextDraw(30, textY, true, color, "%s (%u, %u, %u, %u)", text, varColor.r, varColor.g,
+                             varColor.b, varColor.a);
+                }
                     break;
                 case ConsoleVariableType::Color24:
-                    TextDraw(30, textY, true, color, "%s (%u, %u, %u)", text, var->Color24.r, var->Color24.g,
-                             var->Color24.b);
+                {
+                    Color_RGB8 varColor = var->GetColor24();
+                    TextDraw(30, textY, true, color, "%s (%u, %u, %u)", text, varColor.r, varColor.g,
+                             varColor.b);
+                }
                     break;
             }
 

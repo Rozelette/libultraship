@@ -187,19 +187,19 @@ int32_t ConsoleWindow::GetCommand(std::shared_ptr<Console> console, const std::v
     if (cvar != nullptr) {
         if (cvar->Type == ConsoleVariableType::Integer) {
             if (output) {
-                *output += StringHelper::Sprintf("[LUS] Variable %s is %i", args[1].c_str(), cvar->Integer);
+                *output += StringHelper::Sprintf("[LUS] Variable %s is %i", args[1].c_str(), cvar->GetInteger());
             }
         } else if (cvar->Type == ConsoleVariableType::Float) {
             if (output) {
-                *output += StringHelper::Sprintf("[LUS] Variable %s is %f", args[1].c_str(), cvar->Float);
+                *output += StringHelper::Sprintf("[LUS] Variable %s is %f", args[1].c_str(), cvar->GetFloat());
             }
         } else if (cvar->Type == ConsoleVariableType::String) {
             if (output) {
-                *output += StringHelper::Sprintf("[LUS] Variable %s is %s", args[1].c_str(), cvar->String.c_str());
+                *output += StringHelper::Sprintf("[LUS] Variable %s is %s", args[1].c_str(), cvar->GetString());
             }
         } else if (cvar->Type == ConsoleVariableType::Color) {
             if (output) {
-                *output += StringHelper::Sprintf("[LUS] Variable %s is %08X", args[1].c_str(), cvar->Color);
+                *output += StringHelper::Sprintf("[LUS] Variable %s is %08X", args[1].c_str(), cvar->GetColor());
             }
         } else {
             if (output) {

@@ -24,8 +24,9 @@ std::shared_ptr<CVar> ConsoleVariable::Get(const char* name) {
 int32_t ConsoleVariable::GetInteger(const char* name, int32_t defaultValue) {
     auto variable = Get(name);
 
-    if (variable != nullptr && variable->Type == ConsoleVariableType::Integer) {
-        return variable->Integer;
+    if (variable != nullptr) {
+        assert(variable->Type == ConsoleVariableType::Integer);
+        return variable->GetInteger();
     }
 
     return defaultValue;
@@ -34,8 +35,9 @@ int32_t ConsoleVariable::GetInteger(const char* name, int32_t defaultValue) {
 float ConsoleVariable::GetFloat(const char* name, float defaultValue) {
     auto variable = Get(name);
 
-    if (variable != nullptr && variable->Type == ConsoleVariableType::Float) {
-        return variable->Float;
+    if (variable != nullptr) {
+        assert(variable->Type == ConsoleVariableType::Float);
+        return variable->GetFloat();
     }
 
     return defaultValue;
@@ -44,8 +46,9 @@ float ConsoleVariable::GetFloat(const char* name, float defaultValue) {
 const char* ConsoleVariable::GetString(const char* name, const char* defaultValue) {
     auto variable = Get(name);
 
-    if (variable != nullptr && variable->Type == ConsoleVariableType::String) {
-        return variable->String.c_str();
+    if (variable != nullptr) {
+        assert(variable->Type == ConsoleVariableType::String);
+        return variable->GetString();
     }
 
     return defaultValue;
@@ -54,15 +57,9 @@ const char* ConsoleVariable::GetString(const char* name, const char* defaultValu
 Color_RGBA8 ConsoleVariable::GetColor(const char* name, Color_RGBA8 defaultValue) {
     auto variable = Get(name);
 
-    if (variable != nullptr && variable->Type == ConsoleVariableType::Color) {
-        return variable->Color;
-    } else if (variable != nullptr && variable->Type == ConsoleVariableType::Color24) {
-        Color_RGBA8 temp;
-        temp.r = variable->Color24.r;
-        temp.g = variable->Color24.g;
-        temp.b = variable->Color24.b;
-        temp.a = 255;
-        return temp;
+    if (variable != nullptr) {
+        assert(variable->Type == ConsoleVariableType::Color);
+        return variable->GetColor();
     }
 
     return defaultValue;
@@ -71,14 +68,9 @@ Color_RGBA8 ConsoleVariable::GetColor(const char* name, Color_RGBA8 defaultValue
 Color_RGB8 ConsoleVariable::GetColor24(const char* name, Color_RGB8 defaultValue) {
     auto variable = Get(name);
 
-    if (variable != nullptr && variable->Type == ConsoleVariableType::Color24) {
-        return variable->Color24;
-    } else if (variable != nullptr && variable->Type == ConsoleVariableType::Color) {
-        Color_RGB8 temp;
-        temp.r = variable->Color.r;
-        temp.g = variable->Color.g;
-        temp.b = variable->Color.b;
-        return temp;
+    if (variable != nullptr) {
+        assert(variable->Type == ConsoleVariableType::Color24);
+        return variable->GetColor24();
     }
 
     return defaultValue;
@@ -88,79 +80,170 @@ void ConsoleVariable::SetInteger(const char* name, int32_t value) {
     auto& variable = mVariables[name];
     if (variable == nullptr) {
         variable = std::make_shared<CVar>();
+        variable->Type = ConsoleVariableType::Integer;
+        variable->Default = value;
     }
 
-    variable->Type = ConsoleVariableType::Integer;
-    variable->Integer = value;
+    variable->Value = value;
 }
 
 void ConsoleVariable::SetFloat(const char* name, float value) {
     auto& variable = mVariables[name];
     if (variable == nullptr) {
         variable = std::make_shared<CVar>();
+        variable->Type = ConsoleVariableType::Float;
+        variable->Default = value;
     }
 
-    variable->Type = ConsoleVariableType::Float;
-    variable->Float = value;
+    variable->Value = value;
 }
 
 void ConsoleVariable::SetString(const char* name, const char* value) {
     auto& variable = mVariables[name];
+    size_t length = strlen(value);
     if (variable == nullptr) {
         variable = std::make_shared<CVar>();
+        variable->Type = ConsoleVariableType::String;
+        variable->Default = std::string(value);
     }
 
-    variable->Type = ConsoleVariableType::String;
-    variable->String = std::string(value);
+    variable->Value = std::string(value);
 }
 
 void ConsoleVariable::SetColor(const char* name, Color_RGBA8 value) {
     auto& variable = mVariables[name];
     if (!variable) {
         variable = std::make_shared<CVar>();
+        variable->Type = ConsoleVariableType::Color;
+        variable->Default = value;
     }
 
-    variable->Type = ConsoleVariableType::Color;
-    variable->Color = value;
+    variable->Value = value;
 }
 
 void ConsoleVariable::SetColor24(const char* name, Color_RGB8 value) {
     auto& variable = mVariables[name];
     if (!variable) {
         variable = std::make_shared<CVar>();
+        variable->Type = ConsoleVariableType::Color24;
+        variable->Default = value;
     }
 
-    variable->Type = ConsoleVariableType::Color24;
-    variable->Color24 = value;
+    variable->Value = value;
 }
 
 void ConsoleVariable::RegisterInteger(const char* name, int32_t defaultValue) {
-    if (Get(name) == nullptr) {
-        SetInteger(name, defaultValue);
+    if (!mVariables.contains(name)) {
+        std::shared_ptr<CVar> variable = std::make_shared<CVar>();
+
+        variable->Type = ConsoleVariableType::Integer;
+        variable->Value = variable->Default = defaultValue;
+
+        mVariables.insert({ name, variable });
     }
 }
 
 void ConsoleVariable::RegisterFloat(const char* name, float defaultValue) {
-    if (Get(name) == nullptr) {
-        SetFloat(name, defaultValue);
+    if (!mVariables.contains(name)) {
+        std::shared_ptr<CVar> variable = std::make_shared<CVar>();
+
+        variable->Type = ConsoleVariableType::Float;
+        variable->Value = variable->Default = defaultValue;
+
+        mVariables.insert({ name, variable });
     }
 }
 
 void ConsoleVariable::RegisterString(const char* name, const char* defaultValue) {
-    if (Get(name) == nullptr) {
-        SetString(name, defaultValue);
+    if (!mVariables.contains(name)) {
+        std::shared_ptr<CVar> variable = std::make_shared<CVar>();
+        size_t length = strlen(defaultValue);
+
+        variable->Type = ConsoleVariableType::String;
+
+        variable->Value = variable->Default = std::string(defaultValue);
+
+        mVariables.insert({ name, variable });
     }
 }
 
 void ConsoleVariable::RegisterColor(const char* name, Color_RGBA8 defaultValue) {
-    if (Get(name) == nullptr) {
-        SetColor(name, defaultValue);
+    if (!mVariables.contains(name)) {
+        std::shared_ptr<CVar> variable = std::make_shared<CVar>();
+
+        variable->Type = ConsoleVariableType::Color;
+        variable->Value = variable->Default = defaultValue;
+
+        mVariables.insert({ name, variable });
     }
 }
 
 void ConsoleVariable::RegisterColor24(const char* name, Color_RGB8 defaultValue) {
-    if (Get(name) == nullptr) {
-        SetColor24(name, defaultValue);
+    if (!mVariables.contains(name)) {
+        std::shared_ptr<CVar> variable = std::make_shared<CVar>();
+
+        variable->Type = ConsoleVariableType::Color24;
+        variable->Value = variable->Default = defaultValue;
+
+        mVariables.insert({ name, variable });
+    }
+}
+
+void ConsoleVariable::RegisterInteger(const char* name, int32_t* valuePtr) {
+    if (!mVariables.contains(name)) {
+        std::shared_ptr<CVar> variable = std::make_shared<CVar>();
+
+        variable->Type = ConsoleVariableType::Integer;
+        variable->Default = *valuePtr;
+        variable->Ptr = static_cast<void*>(valuePtr);
+
+        mVariables.insert({ name, variable });
+    }
+}
+void ConsoleVariable::RegisterFloat(const char* name, float* valuePtr) {
+    if (!mVariables.contains(name)) {
+        std::shared_ptr<CVar> variable = std::make_shared<CVar>();
+
+        variable->Type = ConsoleVariableType::Float;
+        variable->Default = *valuePtr;
+        variable->Ptr = static_cast<void*>(valuePtr);
+
+        mVariables.insert({ name, variable });
+    }
+}
+void ConsoleVariable::RegisterString(const char* name, const char** valuePtr) {
+    if (!mVariables.contains(name)) {
+        std::shared_ptr<CVar> variable = std::make_shared<CVar>();
+        size_t length = strlen(*valuePtr);
+
+        variable->Type = ConsoleVariableType::String;
+        variable->Ptr = static_cast<void*>(valuePtr);
+
+        variable->Default = std::string(*valuePtr);
+
+        mVariables.insert({ name, variable });
+    }
+}
+void ConsoleVariable::RegisterColor(const char* name, Color_RGBA8* valuePtr) {
+    if (!mVariables.contains(name)) {
+        std::shared_ptr<CVar> variable = std::make_shared<CVar>();
+
+        variable->Type = ConsoleVariableType::Color;
+        variable->Default = *valuePtr;
+        variable->Ptr = static_cast<void*>(valuePtr);
+
+        mVariables.insert({ name, variable });
+    }
+}
+void ConsoleVariable::RegisterColor24(const char* name, Color_RGB8* valuePtr) {
+    if (!mVariables.contains(name)) {
+        std::shared_ptr<CVar> variable = std::make_shared<CVar>();
+
+        variable->Type = ConsoleVariableType::Color24;
+        variable->Default = *valuePtr;
+        variable->Ptr = static_cast<void*>(valuePtr);
+
+        mVariables.insert({ name, variable });
     }
 }
 
@@ -208,23 +291,9 @@ void ConsoleVariable::CopyVariable(const char* from, const char* to) {
     }
 
     variableTo->Type = variableFrom->Type;
-    switch (variableTo->Type) {
-        case ConsoleVariableType::Integer:
-            variableTo->Integer = variableFrom->Integer;
-            break;
-        case ConsoleVariableType::Float:
-            variableTo->Float = variableFrom->Float;
-            break;
-        case ConsoleVariableType::String:
-            variableTo->String = variableFrom->String;
-            break;
-        case ConsoleVariableType::Color:
-            variableTo->Color = variableFrom->Color;
-            break;
-        case ConsoleVariableType::Color24:
-            variableTo->Color24 = variableFrom->Color24;
-            break;
-    }
+    variableTo->Ptr = variableTo->Ptr;
+    variableTo->Value = variableFrom->Value;
+    variableTo->Default = variableFrom->Default;
 }
 
 void ConsoleVariable::Save() {
@@ -233,29 +302,49 @@ void ConsoleVariable::Save() {
     for (const auto& variable : mVariables) {
         const std::string key = StringHelper::Sprintf("CVars.%s", variable.first.c_str());
 
-        if (variable.second->Type == ConsoleVariableType::String && variable.second != nullptr) {
-            conf->SetString(key, std::string(variable.second->String));
-        } else if (variable.second->Type == ConsoleVariableType::Integer) {
-            conf->SetInt(key, variable.second->Integer);
-        } else if (variable.second->Type == ConsoleVariableType::Float) {
-            conf->SetFloat(key, variable.second->Float);
-        } else if (variable.second->Type == ConsoleVariableType::Color ||
-                   variable.second->Type == ConsoleVariableType::Color24) {
-            auto keyStr = key.c_str();
-            conf->SetUInt(StringHelper::Sprintf("%s.R", keyStr), variable.second->Type == ConsoleVariableType::Color
-                                                                     ? variable.second->Color.r
-                                                                     : variable.second->Color24.r);
-            conf->SetUInt(StringHelper::Sprintf("%s.G", keyStr), variable.second->Type == ConsoleVariableType::Color
-                                                                     ? variable.second->Color.g
-                                                                     : variable.second->Color24.g);
-            conf->SetUInt(StringHelper::Sprintf("%s.B", keyStr), variable.second->Type == ConsoleVariableType::Color
-                                                                     ? variable.second->Color.b
-                                                                     : variable.second->Color24.b);
-            if (variable.second->Type == ConsoleVariableType::Color) {
-                conf->SetUInt(StringHelper::Sprintf("%s.A", keyStr), variable.second->Color.a);
-                conf->SetString(StringHelper::Sprintf("%s.Type", keyStr), "RGBA");
-            } else {
-                conf->SetString(StringHelper::Sprintf("%s.Type", keyStr), "RGB");
+        bool usePtr = variable.second->Ptr != nullptr;
+
+        switch (variable.second->Type) {
+            case ConsoleVariableType::String:
+            {
+                if (variable.second->GetString() != *std::get_if<std::string>(&variable.second->Default)) {
+                    conf->SetString(key, std::string(variable.second->GetString()));
+                }
+            }
+            case ConsoleVariableType::Integer:
+            {
+                if (variable.second->GetInteger() != *std::get_if<int32_t>(&variable.second->Default)) {
+                    conf->SetInt(key, variable.second->GetInteger());
+                }
+            }
+            case ConsoleVariableType::Float:
+            {
+                if (variable.second->GetFloat() != *std::get_if<float>(&variable.second->Default)) {
+                    conf->SetFloat(key, variable.second->GetFloat());
+                }
+            }
+            case ConsoleVariableType::Color:
+            {
+                if (variable.second->GetColor() != *std::get_if<Color_RGBA8>(&variable.second->Default)) {
+                    const char* keyStr = key.c_str();
+                    Color_RGBA8 color = variable.second->GetColor();
+                    conf->SetUInt(StringHelper::Sprintf("%s.R", keyStr), color.r);
+                    conf->SetUInt(StringHelper::Sprintf("%s.G", keyStr), color.g);
+                    conf->SetUInt(StringHelper::Sprintf("%s.B", keyStr), color.b);
+                    conf->SetUInt(StringHelper::Sprintf("%s.A", keyStr), color.a);
+                    conf->SetString(StringHelper::Sprintf("%s.Type", keyStr), "RGBA");
+                }
+            }
+            case ConsoleVariableType::Color24:
+            {
+                if (variable.second->GetColor24() != *std::get_if<Color_RGB8>(&variable.second->Default)) {
+                    const char* keyStr = key.c_str();
+                    Color_RGB8 color = variable.second->GetColor24();
+                    conf->SetUInt(StringHelper::Sprintf("%s.R", keyStr), color.r);
+                    conf->SetUInt(StringHelper::Sprintf("%s.G", keyStr), color.g);
+                    conf->SetUInt(StringHelper::Sprintf("%s.B", keyStr), color.b);
+                    conf->SetString(StringHelper::Sprintf("%s.Type", keyStr), "RGB");
+                }
             }
         }
     }

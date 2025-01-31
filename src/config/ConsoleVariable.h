@@ -6,19 +6,28 @@
 #include <memory>
 #include <unordered_map>
 #include <string>
+#include <variant>
 
 namespace Ship {
 typedef enum class ConsoleVariableType { Integer, Float, String, Color, Color24 } ConsoleVariableType;
 
-typedef struct CVar {
-    const char* Name;
+class CVar {
+public:
+    using ValueType = std::variant<int32_t, float, std::string, Color_RGBA8, Color_RGB8>;
+
+    int32_t GetInteger() const { return Ptr != nullptr ? *static_cast<int32_t*>(Ptr) : *std::get_if<int32_t>(&Value); }
+    float GetFloat() const { return Ptr != nullptr ? *static_cast<float*>(Ptr) : *std::get_if<float>(&Value); }
+    const char* GetString() const { return Ptr != nullptr ? *static_cast<char**>(Ptr) : std::get_if<std::string>(&Value)->c_str(); }
+    Color_RGBA8 GetColor() const { return Ptr != nullptr ? *static_cast<Color_RGBA8*>(Ptr) : *std::get_if<Color_RGBA8>(&Value); }
+    Color_RGB8 GetColor24() const { return Ptr != nullptr ? *static_cast<Color_RGB8*>(Ptr) : *std::get_if<Color_RGB8>(&Value); }
+
+    std::string Name;
     ConsoleVariableType Type;
-    int32_t Integer;
-    float Float;
-    std::string String;
-    Color_RGBA8 Color;
-    Color_RGB8 Color24;
-} CVar;
+
+    void* Ptr = nullptr;
+    ValueType Value;
+    ValueType Default;
+};
 
 class ConsoleVariable {
   public:
@@ -44,6 +53,12 @@ class ConsoleVariable {
     void RegisterString(const char* name, const char* defaultValue);
     void RegisterColor(const char* name, Color_RGBA8 defaultValue);
     void RegisterColor24(const char* name, Color_RGB8 defaultValue);
+
+    void RegisterInteger(const char* name, int32_t* valuePtr);
+    void RegisterFloat(const char* name, float* valuePtr);
+    void RegisterString(const char* name, const char** valuePtr);
+    void RegisterColor(const char* name, Color_RGBA8* valuePtr);
+    void RegisterColor24(const char* name, Color_RGB8* valuePtr);
 
     void ClearVariable(const char* name);
     void ClearBlock(const char* name);

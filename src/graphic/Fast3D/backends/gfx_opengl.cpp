@@ -651,10 +651,45 @@ void GfxRenderingAPIOGL::DrawTriangles(float buf_vbo[], size_t buf_vbo_len, size
     glDrawArrays(GL_TRIANGLES, 0, 3 * buf_vbo_num_tris);
 }
 
+const char* computeShader =
+"#version 430 core\n"
+"layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;\n"
+//"layout(binding = 0) in vec4 vert_in;\n"
+"layout(std430, binding = 0) readonly buffer verts {\n"
+"    vec4 pos_in[];\n"
+"};\n"
+//"layout(binding = 1) uniform mat4 stack[11];\n"
+"layout(std430, binding = 1) writeonly buffer transformed_verts {\n"
+"    vec4 pos_out[];\n"
+"};\n"
+"\n"
+"void main() {\n"
+"    pos_out[gl_GlobalInvocationID.x] = pos_in[gl_GlobalInvocationID.x];\n"
+//"    pos_out[gl_GlobalInvocationID.x] = vec4(1.0, 0.0, 0.0, 0.0);\n"
+"}\n"
+;
+
+void GLAPIENTRY
+MessageCallback(GLenum source,
+    GLenum type,
+    GLuint id,
+    GLenum severity,
+    GLsizei length,
+    const GLchar* message,
+    const void* userParam) {
+    fprintf(stderr, "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
+        (type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : ""),
+        type, severity, message);
+}
+
 void GfxRenderingAPIOGL::Init() {
 #ifndef __linux__
     glewInit();
 #endif
+
+    // During init, enable debug output
+    glEnable(GL_DEBUG_OUTPUT);
+    glDebugMessageCallback(MessageCallback, 0);
 
     glGenBuffers(1, &mOpenglVbo);
     glBindBuffer(GL_ARRAY_BUFFER, mOpenglVbo);
@@ -685,6 +720,65 @@ void GfxRenderingAPIOGL::Init() {
     mPixelDepthRbSize = 1;
 
     glGetIntegerv(GL_MAX_SAMPLES, &mMaxMsaaLevel);
+
+    const GLubyte* version = glGetString(GL_VERSION); // todo extract features
+
+    unsigned int compute;
+    // compute shader
+    compute = glCreateShader(GL_COMPUTE_SHADER);
+    glShaderSource(compute, 1, &computeShader, NULL);
+    glCompileShader(compute);
+    //checkCompileErrors(compute, "COMPUTE");
+
+    // shader Program
+    GLuint compute_program = glCreateProgram();
+    glAttachShader(compute_program, compute);
+    glLinkProgram(compute_program);
+    //checkCompileErrors(compute_program, "PROGRAM");
+
+    // Bind our shader program
+    glUseProgram(compute_program);
+
+    // upload data
+    GLuint vertBuffer;
+    glGenBuffers(1, &vertBuffer);
+
+    std::vector<float> verts;
+    verts.push_back(1.0f); verts.push_back(2.0f); verts.push_back(3.0f); verts.push_back(4.0f);
+    verts.push_back(4.0f); verts.push_back(3.0f); verts.push_back(2.0f); verts.push_back(1.0f);
+    verts.push_back(1.0f); verts.push_back(3.0f); verts.push_back(3.0f); verts.push_back(7.0f);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, verts.size() * sizeof(float), (void*)verts.data(), GL_STREAM_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, vertBuffer);
+
+    // Create output
+    GLuint vertOutBuffer;
+    glGenBuffers(1, &vertOutBuffer);
+
+    std::vector<float> verts_out;
+    verts_out.resize(12);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertOutBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, verts_out.size() * sizeof(float), NULL, GL_DYNAMIC_READ);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, vertOutBuffer);
+
+    glDispatchCompute(3, 1, 1);
+
+    // make sure writing to image has finished before read
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, verts_out.size() * sizeof(float), (void*)verts_out.data());
+
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, NULL);
+
+
+
+
+
+
+    glBindBuffer(GL_ARRAY_BUFFER, mOpenglVbo);
 }
 
 void GfxRenderingAPIOGL::OnResize() {

@@ -96,10 +96,15 @@ class GfxRenderingAPIOGL final : public GfxRenderingAPI {
     void SetSrgbMode() override;
     ImTextureID GetTextureById(int id) override;
 
+    void SetMPMatrix(float matrix[4][4]) override;
+    void TransformVerts(float vertices[][4], int numVerts, float out[][4]) override;
+
   private:
     void SetUniforms(ShaderProgram* prg) const;
     std::string BuildFsShader(const CCFeatures& cc_features);
     void SetPerDrawUniforms();
+
+    void FlushVertices();
 
     struct TextureInfo {
         uint16_t width;
@@ -129,6 +134,12 @@ class GfxRenderingAPIOGL final : public GfxRenderingAPI {
     GLuint mPixelDepthRb = 0;
     GLuint mPixelDepthFb = 0;
     size_t mPixelDepthRbSize = 0;
+
+    GLuint mVertTransformShader = 0;
+    GLuint mVertTransformProgram = 0;
+    GLuint mVertTransformIn = 0;
+    GLuint mVertTransformOut = 0;
+    float mMPMatrix[4][4] = { 0 };
 };
 
 } // namespace Fast

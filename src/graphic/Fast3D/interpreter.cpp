@@ -1115,6 +1115,7 @@ void Interpreter::GfxSpMatrix(uint8_t parameters, const int32_t* addr) {
         mRsp->lights_changed = 1;
     }
     MatrixMul(mRsp->MP_matrix, mRsp->modelview_matrix_stack[mRsp->modelview_matrix_stack_size - 1], mRsp->P_matrix);
+    mRapi->SetMPMatrix(mRsp->MP_matrix);
 }
 
 void Interpreter::GfxSpPopMatrix(uint32_t count) {
@@ -1127,6 +1128,7 @@ void Interpreter::GfxSpPopMatrix(uint32_t count) {
             }
         }
     }
+    mRapi->SetMPMatrix(mRsp->MP_matrix);
     mRsp->lights_changed = true;
 }
 
@@ -1153,6 +1155,22 @@ void Interpreter::AdjustWidthHeightForScale(uint32_t& width, uint32_t& height, u
 }
 
 void Interpreter::GfxSpVertex(size_t n_vertices, size_t dest_index, const F3DVtx* vertices) {
+
+    std::vector<float> verts_in;
+    std::vector<float> verts_out;
+
+    verts_in.resize(n_vertices * 4);
+    verts_out.resize(n_vertices * 4);
+
+    for (size_t i = 0; i < n_vertices; i++) {
+        verts_in[i * 4 + 0] = vertices[i].v.ob[0];
+        verts_in[i * 4 + 1] = vertices[i].v.ob[1];
+        verts_in[i * 4 + 2] = vertices[i].v.ob[2];
+        verts_in[i * 4 + 3] = 1.0f;
+    }
+
+    mRapi->TransformVerts((float (*)[4])verts_in.data(), n_vertices, (float(*)[4])verts_out.data());
+
     for (size_t i = 0; i < n_vertices; i++, dest_index++) {
         const F3DVtx_t* v = &vertices[i].v;
         const F3DVtx_tn* vn = &vertices[i].n;
@@ -1162,14 +1180,19 @@ void Interpreter::GfxSpVertex(size_t n_vertices, size_t dest_index, const F3DVtx
             return;
         }
 
-        float x = v->ob[0] * mRsp->MP_matrix[0][0] + v->ob[1] * mRsp->MP_matrix[1][0] +
+        float x2 = v->ob[0] * mRsp->MP_matrix[0][0] + v->ob[1] * mRsp->MP_matrix[1][0] +
                   v->ob[2] * mRsp->MP_matrix[2][0] + mRsp->MP_matrix[3][0];
-        float y = v->ob[0] * mRsp->MP_matrix[0][1] + v->ob[1] * mRsp->MP_matrix[1][1] +
+        float y2 = v->ob[0] * mRsp->MP_matrix[0][1] + v->ob[1] * mRsp->MP_matrix[1][1] +
                   v->ob[2] * mRsp->MP_matrix[2][1] + mRsp->MP_matrix[3][1];
-        float z = v->ob[0] * mRsp->MP_matrix[0][2] + v->ob[1] * mRsp->MP_matrix[1][2] +
+        float z2 = v->ob[0] * mRsp->MP_matrix[0][2] + v->ob[1] * mRsp->MP_matrix[1][2] +
                   v->ob[2] * mRsp->MP_matrix[2][2] + mRsp->MP_matrix[3][2];
-        float w = v->ob[0] * mRsp->MP_matrix[0][3] + v->ob[1] * mRsp->MP_matrix[1][3] +
+        float w2 = v->ob[0] * mRsp->MP_matrix[0][3] + v->ob[1] * mRsp->MP_matrix[1][3] +
                   v->ob[2] * mRsp->MP_matrix[2][3] + mRsp->MP_matrix[3][3];
+
+        float x = verts_out[i * 4 + 0];
+        float y = verts_out[i * 4 + 1];
+        float z = verts_out[i * 4 + 2];
+        float w = verts_out[i * 4 + 3];
 
         float world_pos[3] = { 0.0 };
         if (mRsp->geometry_mode & G_LIGHTING_POSITIONAL) {

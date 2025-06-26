@@ -654,18 +654,16 @@ void GfxRenderingAPIOGL::DrawTriangles(float buf_vbo[], size_t buf_vbo_len, size
 const char* computeShader =
 "#version 430 core\n"
 "layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;\n"
-//"layout(binding = 0) in vec4 vert_in;\n"
 "layout(std430, binding = 0) readonly buffer verts {\n"
 "    vec4 pos_in[];\n"
 "};\n"
-//"layout(binding = 1) uniform mat4 stack[11];\n"
 "layout(std430, binding = 1) writeonly buffer transformed_verts {\n"
 "    vec4 pos_out[];\n"
 "};\n"
+"uniform mat4 MP_matrix;\n"
 "\n"
 "void main() {\n"
-"    pos_out[gl_GlobalInvocationID.x] = pos_in[gl_GlobalInvocationID.x];\n"
-//"    pos_out[gl_GlobalInvocationID.x] = vec4(1.0, 0.0, 0.0, 0.0);\n"
+"    pos_out[gl_GlobalInvocationID.x] = MP_matrix * pos_in[gl_GlobalInvocationID.x];\n"
 "}\n"
 ;
 
@@ -688,8 +686,8 @@ void GfxRenderingAPIOGL::Init() {
 #endif
 
     // During init, enable debug output
-    glEnable(GL_DEBUG_OUTPUT);
-    glDebugMessageCallback(MessageCallback, 0);
+    //glEnable(GL_DEBUG_OUTPUT);
+    //glDebugMessageCallback(MessageCallback, 0);
 
     glGenBuffers(1, &mOpenglVbo);
     glBindBuffer(GL_ARRAY_BUFFER, mOpenglVbo);
@@ -723,62 +721,59 @@ void GfxRenderingAPIOGL::Init() {
 
     const GLubyte* version = glGetString(GL_VERSION); // todo extract features
 
-    unsigned int compute;
     // compute shader
-    compute = glCreateShader(GL_COMPUTE_SHADER);
-    glShaderSource(compute, 1, &computeShader, NULL);
-    glCompileShader(compute);
+    mVertTransformShader = glCreateShader(GL_COMPUTE_SHADER);
+    glShaderSource(mVertTransformShader, 1, &computeShader, NULL);
+    glCompileShader(mVertTransformShader);
     //checkCompileErrors(compute, "COMPUTE");
 
     // shader Program
-    GLuint compute_program = glCreateProgram();
-    glAttachShader(compute_program, compute);
-    glLinkProgram(compute_program);
+    mVertTransformProgram = glCreateProgram();
+    glAttachShader(mVertTransformProgram, mVertTransformShader);
+    glLinkProgram(mVertTransformProgram);
     //checkCompileErrors(compute_program, "PROGRAM");
 
     // Bind our shader program
-    glUseProgram(compute_program);
+    glUseProgram(mVertTransformProgram);
 
     // upload data
-    GLuint vertBuffer;
-    glGenBuffers(1, &vertBuffer);
+    glGenBuffers(1, &mVertTransformIn);
 
     std::vector<float> verts;
     verts.push_back(1.0f); verts.push_back(2.0f); verts.push_back(3.0f); verts.push_back(4.0f);
     verts.push_back(4.0f); verts.push_back(3.0f); verts.push_back(2.0f); verts.push_back(1.0f);
     verts.push_back(1.0f); verts.push_back(3.0f); verts.push_back(3.0f); verts.push_back(7.0f);
 
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mVertTransformIn);
     glBufferData(GL_SHADER_STORAGE_BUFFER, verts.size() * sizeof(float), (void*)verts.data(), GL_STREAM_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, vertBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mVertTransformIn);
 
     // Create output
-    GLuint vertOutBuffer;
-    glGenBuffers(1, &vertOutBuffer);
+    glGenBuffers(1, &mVertTransformOut);
 
     std::vector<float> verts_out;
     verts_out.resize(12);
 
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertOutBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mVertTransformOut);
     glBufferData(GL_SHADER_STORAGE_BUFFER, verts_out.size() * sizeof(float), NULL, GL_DYNAMIC_READ);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, vertOutBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mVertTransformOut);
+
+    float matrix[16] = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 2.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 3.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 4.0f,
+    };
+    glUniformMatrix4fv(glGetUniformLocation(mVertTransformProgram, "MP_matrix"), 1, GL_TRUE, matrix);
 
     glDispatchCompute(3, 1, 1);
 
     // make sure writing to image has finished before read
-    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    //glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
     glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, verts_out.size() * sizeof(float), (void*)verts_out.data());
 
-
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, NULL);
-
-
-
-
-
-
-    glBindBuffer(GL_ARRAY_BUFFER, mOpenglVbo);
 }
 
 void GfxRenderingAPIOGL::OnResize() {
@@ -1084,6 +1079,50 @@ void GfxRenderingAPIOGL::SetSrgbMode() {
 ImTextureID GfxRenderingAPIOGL::GetTextureById(int id) {
     return reinterpret_cast<ImTextureID>(id);
 }
+
+void GfxRenderingAPIOGL::FlushVertices() {
+
+}
+
+void GfxRenderingAPIOGL::SetMPMatrix(float matrix[4][4]) {
+    FlushVertices();
+
+    memcpy(mMPMatrix, matrix, sizeof(mMPMatrix));
+
+    glUseProgram(mVertTransformProgram);
+    GLint i = glGetUniformLocation(mVertTransformProgram, "MP_matrix");
+    glUniformMatrix4fv(i, 1, GL_FALSE, (float*)mMPMatrix); // TODO defer update until we actually use the shader
+
+    if (mCurrentShaderProgram != nullptr) {
+        glUseProgram(mCurrentShaderProgram->openglProgramId);
+    }
+}
+
+void GfxRenderingAPIOGL::TransformVerts(float vertices[][4], int numVerts, float out[][4]) {
+    glUseProgram(mVertTransformProgram);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mVertTransformIn);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, numVerts * sizeof(float) * 4, (void*)vertices, GL_STREAM_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mVertTransformIn);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mVertTransformOut);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, numVerts * sizeof(float) * 4, NULL, GL_DYNAMIC_READ);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mVertTransformOut);
+
+    glDispatchCompute(numVerts, 1, 1);
+
+    // make sure writing to image has finished before read
+    //glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numVerts * sizeof(float) * 4, (void*)out);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, NULL);
+
+    if (mCurrentShaderProgram != nullptr) {
+        glUseProgram(mCurrentShaderProgram->openglProgramId);
+    }
+}
+
 } // namespace Fast
 #endif
 

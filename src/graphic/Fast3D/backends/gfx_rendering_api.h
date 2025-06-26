@@ -74,6 +74,10 @@ class GfxRenderingAPI {
     virtual void SetSrgbMode() = 0;
     virtual ImTextureID GetTextureById(int id) = 0;
 
+    // TODO comment
+    virtual void SetMPMatrix(float matrix[4][4]) {}
+    virtual void TransformVerts(float vertices[][4], int numVerts, float out[][4]) {}
+
   protected:
     int8_t mCurrentDepthTest = 0;
     int8_t mCurrentDepthMask = 0;

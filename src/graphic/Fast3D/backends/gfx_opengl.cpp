@@ -657,13 +657,32 @@ const char* computeShader =
 "layout(std430, binding = 0) readonly buffer verts {\n"
 "    vec4 pos_in[];\n"
 "};\n"
-"layout(std430, binding = 1) writeonly buffer transformed_verts {\n"
+"layout(std430, binding = 1) readonly buffer normals {\n"
+"    vec4 norm_in[];\n"
+"};\n"
+"layout(std430, binding = 2) writeonly buffer transformed_verts {\n"
 "    vec4 pos_out[];\n"
 "};\n"
+"layout(std430, binding = 3) writeonly buffer vert_color {\n"
+"    vec4 col_out[];\n"
+"};\n"
 "uniform mat4 MP_matrix;\n"
+"uniform vec3 lights_coeff[8];\n"
+"uniform vec3 lights_col[8];\n"
+"uniform unsigned int num_lights;\n"
 "\n"
 "void main() {\n"
 "    pos_out[gl_GlobalInvocationID.x] = MP_matrix * pos_in[gl_GlobalInvocationID.x];\n"
+"    vec3 col = lights_col[num_lights - 1];\n"
+"    for (int i = 0; i < num_lights - 1; i++) {\n"
+"        vec3 temp = lights_coeff[i] * norm_in[gl_GlobalInvocationID.x].xyz;\n"
+"        float intensity = temp.x + temp.y + temp.z;\n"
+"        if (intensity > 0.0) {\n"
+"            col += intensity * lights_col[i];\n"
+"        }\n"
+"    }\n"
+"    col = clamp(col, vec3(0.0, 0.0, 0.0), vec3(1.0, 1.0, 1.0));\n"
+"    col_out[gl_GlobalInvocationID.x] = vec4(col, 1.0);\n"
 "}\n"
 ;
 
@@ -736,44 +755,13 @@ void GfxRenderingAPIOGL::Init() {
     // Bind our shader program
     glUseProgram(mVertTransformProgram);
 
-    // upload data
+    // Create input
     glGenBuffers(1, &mVertTransformIn);
-
-    std::vector<float> verts;
-    verts.push_back(1.0f); verts.push_back(2.0f); verts.push_back(3.0f); verts.push_back(4.0f);
-    verts.push_back(4.0f); verts.push_back(3.0f); verts.push_back(2.0f); verts.push_back(1.0f);
-    verts.push_back(1.0f); verts.push_back(3.0f); verts.push_back(3.0f); verts.push_back(7.0f);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mVertTransformIn);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, verts.size() * sizeof(float), (void*)verts.data(), GL_STREAM_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mVertTransformIn);
+    glGenBuffers(1, &mVertTransformNormalIn);
 
     // Create output
     glGenBuffers(1, &mVertTransformOut);
-
-    std::vector<float> verts_out;
-    verts_out.resize(12);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mVertTransformOut);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, verts_out.size() * sizeof(float), NULL, GL_DYNAMIC_READ);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mVertTransformOut);
-
-    float matrix[16] = {
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 2.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 3.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 4.0f,
-    };
-    glUniformMatrix4fv(glGetUniformLocation(mVertTransformProgram, "MP_matrix"), 1, GL_TRUE, matrix);
-
-    glDispatchCompute(3, 1, 1);
-
-    // make sure writing to image has finished before read
-    //glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-
-    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, verts_out.size() * sizeof(float), (void*)verts_out.data());
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, NULL);
+    glGenBuffers(1, &mVertTransformColorOut);
 }
 
 void GfxRenderingAPIOGL::OnResize() {
@@ -1089,38 +1077,70 @@ void GfxRenderingAPIOGL::SetMPMatrix(float matrix[4][4]) {
 
     memcpy(mMPMatrix, matrix, sizeof(mMPMatrix));
 
-    glUseProgram(mVertTransformProgram);
-    GLint i = glGetUniformLocation(mVertTransformProgram, "MP_matrix");
-    glUniformMatrix4fv(i, 1, GL_FALSE, (float*)mMPMatrix); // TODO defer update until we actually use the shader
-
-    if (mCurrentShaderProgram != nullptr) {
-        glUseProgram(mCurrentShaderProgram->openglProgramId);
-    }
+    mMPChanged = true;
 }
 
-void GfxRenderingAPIOGL::TransformVerts(float vertices[][4], int numVerts, float out[][4]) {
+void GfxRenderingAPIOGL::TransformVerts(float vertices[][4], float normal[][4], int numVerts, float out[][4], float col_out[][4]) {
     glUseProgram(mVertTransformProgram);
+
+    if (mLightsChanged) {
+        glUniform3fv(glGetUniformLocation(mVertTransformProgram, "lights_coeff"), 8, (float*)mLightCoeff);
+        glUniform3fv(glGetUniformLocation(mVertTransformProgram, "lights_col"), 8, (float*)mLightCol);
+        glUniform1ui(glGetUniformLocation(mVertTransformProgram, "num_lights"), (GLuint)mNumLights);
+
+        mLightsChanged = false;
+    }
+
+    if (mMPChanged) {
+        glUniformMatrix4fv(glGetUniformLocation(mVertTransformProgram, "MP_matrix"), 1, GL_FALSE, (float*)mMPMatrix);
+
+        mMPChanged = false;
+    }
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, mVertTransformIn);
     glBufferData(GL_SHADER_STORAGE_BUFFER, numVerts * sizeof(float) * 4, (void*)vertices, GL_STREAM_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mVertTransformIn);
 
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mVertTransformNormalIn);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, numVerts * sizeof(float) * 4, (void*)normal, GL_STREAM_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mVertTransformNormalIn);
+
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, mVertTransformOut);
     glBufferData(GL_SHADER_STORAGE_BUFFER, numVerts * sizeof(float) * 4, NULL, GL_DYNAMIC_READ);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mVertTransformOut);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mVertTransformOut);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mVertTransformColorOut);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, numVerts * sizeof(float) * 4, NULL, GL_DYNAMIC_READ);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, mVertTransformColorOut);
 
     glDispatchCompute(numVerts, 1, 1);
 
-    // make sure writing to image has finished before read
-    //glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mVertTransformOut);
     glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numVerts * sizeof(float) * 4, (void*)out);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mVertTransformColorOut);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numVerts * sizeof(float) * 4, (void*)col_out);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, NULL);
 
     if (mCurrentShaderProgram != nullptr) {
         glUseProgram(mCurrentShaderProgram->openglProgramId);
     }
+}
+
+void GfxRenderingAPIOGL::SetNumLights(uint32_t numLights) {
+    mNumLights = numLights;
+    mLightsChanged = true;
+}
+void GfxRenderingAPIOGL::SetLightData(uint32_t index, float coeff[3], float col[3]) {
+    mLightCoeff[index][0] = coeff[0];
+    mLightCoeff[index][1] = coeff[1];
+    mLightCoeff[index][2] = coeff[2];
+
+    mLightCol[index][0] = col[0];
+    mLightCol[index][1] = col[1];
+    mLightCol[index][2] = col[2];
+
+    mLightsChanged = true;
 }
 
 } // namespace Fast

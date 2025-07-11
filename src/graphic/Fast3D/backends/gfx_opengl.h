@@ -97,7 +97,9 @@ class GfxRenderingAPIOGL final : public GfxRenderingAPI {
     ImTextureID GetTextureById(int id) override;
 
     void SetMPMatrix(float matrix[4][4]) override;
-    void TransformVerts(float vertices[][4], int numVerts, float out[][4]) override;
+    void TransformVerts(float vertices[][4], float normal[][4], int numVerts, float out[][4], float col_out[][4]) override;
+    void SetNumLights(uint32_t numLights) override;
+    void SetLightData(uint32_t index, float coeff[3], float col[3]) override;
 
   private:
     void SetUniforms(ShaderProgram* prg) const;
@@ -138,8 +140,16 @@ class GfxRenderingAPIOGL final : public GfxRenderingAPI {
     GLuint mVertTransformShader = 0;
     GLuint mVertTransformProgram = 0;
     GLuint mVertTransformIn = 0;
+    GLuint mVertTransformNormalIn = 0;
     GLuint mVertTransformOut = 0;
-    float mMPMatrix[4][4] = { 0 };
+    GLuint mVertTransformColorOut = 0;
+    float mMPMatrix[4][4] = { 0.0f };
+    float mLightCoeff[8][3] = { 0.0f };
+    float mLightCol[8][3] = { 0.0f };
+    uint32_t mNumLights = 0;
+
+    bool mMPChanged = false;
+    bool mLightsChanged = false;
 };
 
 } // namespace Fast

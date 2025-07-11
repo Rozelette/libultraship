@@ -1157,19 +1157,45 @@ void Interpreter::AdjustWidthHeightForScale(uint32_t& width, uint32_t& height, u
 void Interpreter::GfxSpVertex(size_t n_vertices, size_t dest_index, const F3DVtx* vertices) {
 
     std::vector<float> verts_in;
+    std::vector<float> normal_in;
     std::vector<float> verts_out;
+    std::vector<float> col_out;
 
     verts_in.resize(n_vertices * 4);
+    normal_in.resize(n_vertices * 4);
     verts_out.resize(n_vertices * 4);
+    col_out.resize(n_vertices * 4);
 
     for (size_t i = 0; i < n_vertices; i++) {
         verts_in[i * 4 + 0] = vertices[i].v.ob[0];
         verts_in[i * 4 + 1] = vertices[i].v.ob[1];
         verts_in[i * 4 + 2] = vertices[i].v.ob[2];
         verts_in[i * 4 + 3] = 1.0f;
+
+        normal_in[i * 4 + 0] = vertices[i].n.n[0] / 127.0f;
+        normal_in[i * 4 + 1] = vertices[i].n.n[1] / 127.0f;
+        normal_in[i * 4 + 2] = vertices[i].n.n[2] / 127.0f;
+        normal_in[i * 4 + 3] = 0.0f;
     }
 
-    mRapi->TransformVerts((float (*)[4])verts_in.data(), n_vertices, (float(*)[4])verts_out.data());
+    if (mRsp->geometry_mode & G_LIGHTING) {
+        if (mRsp->lights_changed) {
+            for (int i = 0; i < mRsp->current_num_lights - 1; i++) {
+                CalculateNormalDir(&mRsp->current_lights[i].l, mRsp->current_lights_coeffs[i]);
+                float col[3] = { mRsp->current_lights[i].l.col[0] / 255.0f, mRsp->current_lights[i].l.col[1] / 255.0f, mRsp->current_lights[i].l.col[2] / 255.0f };
+                mRapi->SetLightData(i, mRsp->current_lights_coeffs[i], col);
+            }
+            float col[3] = { mRsp->current_lights[mRsp->current_num_lights - 1].l.col[0] / 255.0f, mRsp->current_lights[mRsp->current_num_lights - 1].l.col[1] / 255.0f, mRsp->current_lights[mRsp->current_num_lights - 1].l.col[2] / 255.0f };
+            mRapi->SetLightData(mRsp->current_num_lights - 1, mRsp->current_lights_coeffs[mRsp->current_num_lights - 1], col);
+            /*static const Light_t lookat_x = {{0, 0, 0}, 0, {0, 0, 0}, 0, {127, 0, 0}, 0};
+            static const Light_t lookat_y = {{0, 0, 0}, 0, {0, 0, 0}, 0, {0, 127, 0}, 0};*/
+            CalculateNormalDir(&mRsp->lookat[0], mRsp->current_lookat_coeffs[0]);
+            CalculateNormalDir(&mRsp->lookat[1], mRsp->current_lookat_coeffs[1]);
+            mRsp->lights_changed = false;
+        }
+    }
+
+    mRapi->TransformVerts((float (*)[4])verts_in.data(), (float(*)[4])normal_in.data(), n_vertices, (float(*)[4])verts_out.data(), (float(*)[4])col_out.data());
 
     for (size_t i = 0; i < n_vertices; i++, dest_index++) {
         const F3DVtx_t* v = &vertices[i].v;
@@ -1179,7 +1205,7 @@ void Interpreter::GfxSpVertex(size_t n_vertices, size_t dest_index, const F3DVtx
         if (v == nullptr) {
             return;
         }
-
+        /*
         float x2 = v->ob[0] * mRsp->MP_matrix[0][0] + v->ob[1] * mRsp->MP_matrix[1][0] +
                   v->ob[2] * mRsp->MP_matrix[2][0] + mRsp->MP_matrix[3][0];
         float y2 = v->ob[0] * mRsp->MP_matrix[0][1] + v->ob[1] * mRsp->MP_matrix[1][1] +
@@ -1188,6 +1214,7 @@ void Interpreter::GfxSpVertex(size_t n_vertices, size_t dest_index, const F3DVtx
                   v->ob[2] * mRsp->MP_matrix[2][2] + mRsp->MP_matrix[3][2];
         float w2 = v->ob[0] * mRsp->MP_matrix[0][3] + v->ob[1] * mRsp->MP_matrix[1][3] +
                   v->ob[2] * mRsp->MP_matrix[2][3] + mRsp->MP_matrix[3][3];
+                  */
 
         float x = verts_out[i * 4 + 0];
         float y = verts_out[i * 4 + 1];
@@ -1208,21 +1235,24 @@ void Interpreter::GfxSpVertex(size_t n_vertices, size_t dest_index, const F3DVtx
         short V = v->tc[1] * mRsp->texture_scaling_factor.t >> 16;
 
         if (mRsp->geometry_mode & G_LIGHTING) {
+            /*
             if (mRsp->lights_changed) {
                 for (int i = 0; i < mRsp->current_num_lights - 1; i++) {
                     CalculateNormalDir(&mRsp->current_lights[i].l, mRsp->current_lights_coeffs[i]);
+                    float col[3] = { mRsp->current_lights[i].l.col[0] / 255.0f, mRsp->current_lights[i].l.col[1] / 255.0f, mRsp->current_lights[i].l.col[2] / 255.0f };
+                    mRapi->SetLightData(i, mRsp->current_lights_coeffs[i], col);
                 }
-                /*static const Light_t lookat_x = {{0, 0, 0}, 0, {0, 0, 0}, 0, {127, 0, 0}, 0};
-                static const Light_t lookat_y = {{0, 0, 0}, 0, {0, 0, 0}, 0, {0, 127, 0}, 0};*/
                 CalculateNormalDir(&mRsp->lookat[0], mRsp->current_lookat_coeffs[0]);
                 CalculateNormalDir(&mRsp->lookat[1], mRsp->current_lookat_coeffs[1]);
                 mRsp->lights_changed = false;
             }
+            */
 
             int r = mRsp->current_lights[mRsp->current_num_lights - 1].l.col[0];
             int g = mRsp->current_lights[mRsp->current_num_lights - 1].l.col[1];
             int b = mRsp->current_lights[mRsp->current_num_lights - 1].l.col[2];
 
+            /*
             for (int i = 0; i < mRsp->current_num_lights - 1; i++) {
                 float intensity = 0;
                 if ((mRsp->geometry_mode & G_LIGHTING_POSITIONAL) && (mRsp->current_lights[i].p.unk3 != 0)) {
@@ -1274,6 +1304,11 @@ void Interpreter::GfxSpVertex(size_t n_vertices, size_t dest_index, const F3DVtx
                     b += intensity * mRsp->current_lights[i].l.col[2];
                 }
             }
+            */
+
+            r = col_out[i * 4 + 0] * 255;
+            g = col_out[i * 4 + 1] * 255;
+            b = col_out[i * 4 + 2] * 255;
 
             d->color.r = r > 255 ? 255 : r;
             d->color.g = g > 255 ? 255 : g;
@@ -1901,6 +1936,7 @@ void Interpreter::GfxSpMovewordF3dex2(uint8_t index, uint16_t offset, uintptr_t 
     switch (index) {
         case G_MW_NUMLIGHT:
             mRsp->current_num_lights = data / 24 + 1; // add ambient light
+            mRapi->SetNumLights(mRsp->current_num_lights);
             mRsp->lights_changed = true;
             break;
         case G_MW_FOG:
@@ -1927,6 +1963,7 @@ void Interpreter::GfxSpMovewordF3d(uint8_t index, uint16_t offset, uintptr_t dat
             // Ambient light is included
             // The 31st bit is a flag that lights should be recalculated
             mRsp->current_num_lights = (data - 0x80000000U) / 32;
+            mRapi->SetNumLights(mRsp->current_num_lights);
             mRsp->lights_changed = true;
             break;
         case G_MW_FOG:
@@ -4186,6 +4223,9 @@ void Interpreter::SpReset() {
     mRsp->lookat[1].dir[2] = 0;
     CalculateNormalDir(&mRsp->lookat[0], mRsp->current_lookat_coeffs[0]);
     CalculateNormalDir(&mRsp->lookat[1], mRsp->current_lookat_coeffs[1]);
+
+    mRapi->SetNumLights(mRsp->current_num_lights);
+    // TODO notify render api of reset
 }
 
 void Interpreter::GetDimensions(uint32_t* width, uint32_t* height, int32_t* posX, int32_t* posY) {

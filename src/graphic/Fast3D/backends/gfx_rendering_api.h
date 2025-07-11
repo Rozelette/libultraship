@@ -76,7 +76,9 @@ class GfxRenderingAPI {
 
     // TODO comment
     virtual void SetMPMatrix(float matrix[4][4]) {}
-    virtual void TransformVerts(float vertices[][4], int numVerts, float out[][4]) {}
+    virtual void TransformVerts(float vertices[][4], float normal[][4], int numVerts, float out[][4], float col_out[][4]) {}
+    virtual void SetNumLights(uint32_t numLights) {}
+    virtual void SetLightData(uint32_t index, float coeff[3], float col[3]) {}
 
   protected:
     int8_t mCurrentDepthTest = 0;

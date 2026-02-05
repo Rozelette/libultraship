@@ -226,6 +226,18 @@ std::optional<std::string> opengl_include_fs(const std::string& path) {
     return *inc;
 }
 
+static std::string currentShaderOptions;
+
+prism::ContextTypes* defined(prism::ContextTypes* _, prism::ContextTypes* name) {
+    bool out = false;
+
+    std::string nameString = std::get<std::string>(*name);
+
+    out = currentShaderOptions.find(nameString) != std::string::npos;
+
+    return new prism::ContextTypes{ out };
+}
+
 std::string GfxRenderingAPIOGL::BuildFsShader(const CCFeatures& cc_features) {
     prism::Processor processor;
     prism::ContextItems mContext = {
@@ -289,6 +301,7 @@ std::string GfxRenderingAPIOGL::BuildFsShader(const CCFeatures& cc_features) {
         { "core_opengl", false },
         { "texture", "texture2D" },
         { "vOutColor", "gl_FragColor" },
+        { "defined", (InvokeFunc)defined },
 #endif
     };
     processor.populate(mContext);
@@ -296,15 +309,39 @@ std::string GfxRenderingAPIOGL::BuildFsShader(const CCFeatures& cc_features) {
     init->Type = (uint32_t)Ship::ResourceType::Shader;
     init->ByteOrder = Ship::Endianness::Native;
     init->Format = RESOURCE_FORMAT_BINARY;
-    auto res = std::static_pointer_cast<Ship::Shader>(Ship::Context::GetInstance()->GetResourceManager()->LoadResource(
-        "shaders/opengl/default.shader.fs", true, init));
 
-    if (res == nullptr) {
-        SPDLOG_ERROR("Failed to load default fragment shader, missing f3d.o2r?");
-        abort();
+    std::string shaderName;
+    std::string shaderOptions;
+
+    currentShaderOptions = shaderOptions;
+
+    std::string* shader = nullptr;
+    if (cc_features.shader_id == -1) {
+        auto res =
+            std::static_pointer_cast<Ship::Shader>(Ship::Context::GetInstance()->GetResourceManager()->LoadResource(
+                "shaders/opengl/default.shader.fs", true, init));
+
+        if (res == nullptr) {
+            SPDLOG_ERROR("Failed to load default fragment shader, missing f3d.o2r?");
+            abort();
+        }
+
+        shader = static_cast<std::string*>(res->GetRawPointer());
+    } else {
+        gfx_lookup_shader_id(cc_features.shader_id, shaderName, shaderOptions);
+        currentShaderOptions = shaderOptions;
+
+        auto res =
+            std::static_pointer_cast<Ship::Shader>(Ship::Context::GetInstance()->GetResourceManager()->LoadResource(shaderName + ".fs", true, init));
+
+        if (res == nullptr) {
+            SPDLOG_ERROR("Failed to load fragment shader {}", shaderName);
+            abort();
+        }
+
+        shader = static_cast<std::string*>(res->GetRawPointer());
     }
 
-    auto shader = static_cast<std::string*>(res->GetRawPointer());
     processor.load(*shader);
     processor.bind_include_loader(opengl_include_fs);
     auto result = processor.process();

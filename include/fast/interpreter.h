@@ -500,6 +500,7 @@ class Interpreter {
 
     uintptr_t mSegmentPointers[MAX_SEGMENT_POINTERS]{};
 
+    std::string mCurrentDisplayList = "";
     bool mFbActive{};
     bool mRendersToFb{}; // game_renders_to_framebuffer;
     std::map<int, FBInfo>::iterator mActiveFrameBuffer;
@@ -523,6 +524,7 @@ void gfx_set_target_ucode(UcodeHandlers ucode);
 void gfx_push_current_dir(char* path);
 int32_t gfx_check_image_signature(const char* imgData);
 const char* GfxGetOpcodeName(int8_t opcode);
+void gfx_lookup_shader_id(int16_t id, std::string& shaderName, std::string& shaderOptions);
 
 } // namespace Fast
 

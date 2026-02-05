@@ -1495,9 +1495,15 @@ void Interpreter::GfxSpTri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx
     if (mRdp->loaded_texture[1].blended) {
         cc_options |= SHADER_OPT(TEXEL1_BLEND);
     }
-    if (shader.enabled) {
+    //if (shader.enabled) {
+    //    cc_options |= SHADER_OPT(USE_SHADER);
+    //    cc_options |= (shader.id << 17);
+    //}
+
+    if (mCurrentDisplayList.starts_with("scene")) {
         cc_options |= SHADER_OPT(USE_SHADER);
-        cc_options |= (shader.id << 17);
+        int16_t shaderId = shader.id;
+        cc_options |= (shaderId << 17);
     }
 
     ColorCombinerKey key;
@@ -2710,6 +2716,10 @@ bool gfx_marker_handler_otr(F3DGfx** cmd0) {
     Interpreter* gfx = mInstance.lock().get();
     (*cmd0)++;
     F3DGfx* cmd = (*cmd0);
+
+    uint64_t hash = ((uint64_t)cmd->words.w0 << 32) + cmd->words.w1;
+    gfx->mCurrentDisplayList =
+        Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager()->HashToCString(hash);
     gfx->mMarkerOn = true;
     return false;
 }
@@ -4172,6 +4182,9 @@ void Interpreter::SpReset() {
     mRsp->lookat[1].dir[2] = 0;
     CalculateNormalDir(&mRsp->lookat[0], mRsp->current_lookat_coeffs[0]);
     CalculateNormalDir(&mRsp->lookat[1], mRsp->current_lookat_coeffs[1]);
+
+    shader_ids.clear();
+    shader_ids.push_back("shaders/opengl/test.shader");
 }
 
 void Interpreter::GetDimensions(uint32_t* width, uint32_t* height, int32_t* posX, int32_t* posY) {
@@ -4621,6 +4634,8 @@ void gfx_cc_get_features(uint64_t shader_id0, uint32_t shader_id1, struct CCFeat
 
     if (shader_id1 & SHADER_OPT(USE_SHADER)) {
         cc_features->shader_id = (shader_id1 >> 17) & 0xFFFF;
+    } else {
+        cc_features->shader_id = -1;
     }
 
     cc_features->usedTextures[0] = false;
@@ -4678,6 +4693,12 @@ void gfx_cc_get_features(uint64_t shader_id0, uint32_t shader_id1, struct CCFeat
     if (cc_features->usedTextures[1] && shader_id1 & SHADER_OPT(TEXEL1_BLEND)) {
         cc_features->used_blend[1] = true;
     }
+}
+
+void Fast::gfx_lookup_shader_id(int16_t id, std::string& shaderName, std::string& shaderOptions) {
+    Fast::Interpreter* interpreter = Fast::mInstance.lock().get();
+    shaderName = interpreter->shader_ids[id];
+    shaderOptions = "TEST";
 }
 
 extern "C" int gfx_create_framebuffer(uint32_t width, uint32_t height, uint32_t native_width, uint32_t native_height,

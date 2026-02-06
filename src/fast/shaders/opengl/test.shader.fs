@@ -210,6 +210,12 @@ void main() {
     @end
 
     @if(defined("TEST"))
-        @{vOutColor} = vec4(1.0, 0.75, 0.8, 1.0);
+        @if(value("TEST2") == 0)
+            @{vOutColor} = vec4(1.0, 0.75, 0.8, 1.0);
+        @elseif(value("TEST2") == 1)
+            @{vOutColor} = vec4(0.8, 1.0, 0.75, 1.0);
+        @elseif(value("TEST2") == 2)
+            @{vOutColor} = vec4(0.75, 0.8, 1.0, 1.0);
+        @end
     @end
 }

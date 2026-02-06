@@ -1500,11 +1500,7 @@ void Interpreter::GfxSpTri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx
     //    cc_options |= (shader.id << 17);
     //}
 
-    if (mCurrentDisplayList.starts_with("scene")) {
-        cc_options |= SHADER_OPT(USE_SHADER);
-        int16_t shaderId = shader.id;
-        cc_options |= (shaderId << 17);
-    }
+    cc_options |= ((shader.id & 0xFFFF) << 16);
 
     ColorCombinerKey key;
     key.combine_mode = mRdp->combine_mode;
@@ -2721,6 +2717,14 @@ bool gfx_marker_handler_otr(F3DGfx** cmd0) {
     gfx->mCurrentDisplayList =
         Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager()->HashToCString(hash);
     gfx->mMarkerOn = true;
+
+    if (gfx->mCurrentDisplayList.starts_with("scene")) {
+        int16_t which = gfx->mCurrentDisplayList.size() % 3 + 1;
+        gfx->mRdp->current_shader = { true, which, 0 };
+    } else {
+        gfx->mRdp->current_shader = { true, 0, 0 };
+    }
+
     return false;
 }
 
@@ -2917,7 +2921,7 @@ int16_t Interpreter::CreateShader(const std::string& path) {
     if (shader == nullptr || !shader->IsLoaded) {
         return -1;
     }
-    shader_ids.push_back(std::string(shader->Buffer->data()));
+    shader_ids.push_back(std::make_pair(std::string(shader->Buffer->data()), Interpreter::ShaderOptions{}));
     return shader_ids.size() - 1;
 }
 
@@ -4184,7 +4188,10 @@ void Interpreter::SpReset() {
     CalculateNormalDir(&mRsp->lookat[1], mRsp->current_lookat_coeffs[1]);
 
     shader_ids.clear();
-    shader_ids.push_back("shaders/opengl/test.shader");
+    shader_ids.push_back(std::make_pair("shaders/opengl/default.shader.fs", Interpreter::ShaderOptions{}));
+    shader_ids.push_back(std::make_pair("shaders/opengl/test.shader.fs", Interpreter::ShaderOptions{ { "TEST", 0 }, { "TEST2", 0 } }));
+    shader_ids.push_back(std::make_pair("shaders/opengl/test.shader.fs", Interpreter::ShaderOptions{ { "TEST", 0 }, { "TEST2", 1 } }));
+    shader_ids.push_back(std::make_pair("shaders/opengl/test.shader.fs", Interpreter::ShaderOptions{ { "TEST", 0 }, { "TEST2", 2 } }));
 }
 
 void Interpreter::GetDimensions(uint32_t* width, uint32_t* height, int32_t* posX, int32_t* posY) {
@@ -4632,11 +4639,7 @@ void gfx_cc_get_features(uint64_t shader_id0, uint32_t shader_id1, struct CCFeat
     cc_features->clamp[1][0] = shader_id1 & SHADER_OPT(TEXEL1_CLAMP_S);
     cc_features->clamp[1][1] = shader_id1 & SHADER_OPT(TEXEL1_CLAMP_T);
 
-    if (shader_id1 & SHADER_OPT(USE_SHADER)) {
-        cc_features->shader_id = (shader_id1 >> 17) & 0xFFFF;
-    } else {
-        cc_features->shader_id = -1;
-    }
+    cc_features->shader_id = (shader_id1 >> 16) & 0xFFFF;
 
     cc_features->usedTextures[0] = false;
     cc_features->usedTextures[1] = false;
@@ -4695,10 +4698,10 @@ void gfx_cc_get_features(uint64_t shader_id0, uint32_t shader_id1, struct CCFeat
     }
 }
 
-void Fast::gfx_lookup_shader_id(int16_t id, std::string& shaderName, std::string& shaderOptions) {
+void Fast::gfx_lookup_shader_id(int16_t id, std::string& name, Interpreter::ShaderOptions& options) {
     Fast::Interpreter* interpreter = Fast::mInstance.lock().get();
-    shaderName = interpreter->shader_ids[id];
-    shaderOptions = "TEST";
+    name = interpreter->shader_ids[id].first;
+    options = interpreter->shader_ids[id].second;
 }
 
 extern "C" int gfx_create_framebuffer(uint32_t width, uint32_t height, uint32_t native_width, uint32_t native_height,

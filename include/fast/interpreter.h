@@ -515,7 +515,8 @@ class Interpreter {
 
     const std::unordered_map<Mtx*, MtxF>* mCurMtxReplacements;
     bool mMarkerOn; // This was originally a debug feature. Now it seems to control s2dex?
-    std::vector<std::string> shader_ids;
+    using ShaderOptions = std::unordered_map<std::string, int>;
+    std::vector<std::pair<std::string, ShaderOptions>> shader_ids;
     int mInterpolationIndex;
     int mInterpolationIndexTarget;
 };
@@ -524,7 +525,7 @@ void gfx_set_target_ucode(UcodeHandlers ucode);
 void gfx_push_current_dir(char* path);
 int32_t gfx_check_image_signature(const char* imgData);
 const char* GfxGetOpcodeName(int8_t opcode);
-void gfx_lookup_shader_id(int16_t id, std::string& shaderName, std::string& shaderOptions);
+void gfx_lookup_shader_id(int16_t id, std::string& name, Interpreter::ShaderOptions& options);
 
 } // namespace Fast
 

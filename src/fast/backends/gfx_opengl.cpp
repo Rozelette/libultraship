@@ -226,14 +226,27 @@ std::optional<std::string> opengl_include_fs(const std::string& path) {
     return *inc;
 }
 
-static std::string currentShaderOptions;
+static Interpreter::ShaderOptions* currentShaderOptions = nullptr;
 
 prism::ContextTypes* defined(prism::ContextTypes* _, prism::ContextTypes* name) {
     bool out = false;
 
     std::string nameString = std::get<std::string>(*name);
 
-    out = currentShaderOptions.find(nameString) != std::string::npos;
+    out = currentShaderOptions->contains(nameString);
+
+    return new prism::ContextTypes{ out };
+}
+
+prism::ContextTypes* value(prism::ContextTypes* _, prism::ContextTypes* name) {
+    int out = 0;
+
+    std::string nameString = std::get<std::string>(*name);
+
+    auto option = currentShaderOptions->find(nameString);
+    if (option != currentShaderOptions->end()) {
+        out = currentShaderOptions->at(nameString);
+    }
 
     return new prism::ContextTypes{ out };
 }
@@ -302,6 +315,7 @@ std::string GfxRenderingAPIOGL::BuildFsShader(const CCFeatures& cc_features) {
         { "texture", "texture2D" },
         { "vOutColor", "gl_FragColor" },
         { "defined", (InvokeFunc)defined },
+        { "value", (InvokeFunc)value },
 #endif
     };
     processor.populate(mContext);
@@ -311,36 +325,23 @@ std::string GfxRenderingAPIOGL::BuildFsShader(const CCFeatures& cc_features) {
     init->Format = RESOURCE_FORMAT_BINARY;
 
     std::string shaderName;
-    std::string shaderOptions;
+    Interpreter::ShaderOptions shaderOptions;
+    gfx_lookup_shader_id(cc_features.shader_id, shaderName, shaderOptions);
+    currentShaderOptions = &shaderOptions;
 
-    currentShaderOptions = shaderOptions;
+    auto res =
+        std::static_pointer_cast<Ship::Shader>(Ship::Context::GetInstance()->GetResourceManager()->LoadResource(shaderName, true, init));
 
-    std::string* shader = nullptr;
-    if (cc_features.shader_id == -1) {
-        auto res =
-            std::static_pointer_cast<Ship::Shader>(Ship::Context::GetInstance()->GetResourceManager()->LoadResource(
-                "shaders/opengl/default.shader.fs", true, init));
-
-        if (res == nullptr) {
+    if (res == nullptr) {
+        if (cc_features.shader_id == 0) {
             SPDLOG_ERROR("Failed to load default fragment shader, missing f3d.o2r?");
-            abort();
-        }
-
-        shader = static_cast<std::string*>(res->GetRawPointer());
-    } else {
-        gfx_lookup_shader_id(cc_features.shader_id, shaderName, shaderOptions);
-        currentShaderOptions = shaderOptions;
-
-        auto res =
-            std::static_pointer_cast<Ship::Shader>(Ship::Context::GetInstance()->GetResourceManager()->LoadResource(shaderName + ".fs", true, init));
-
-        if (res == nullptr) {
+        } else {
             SPDLOG_ERROR("Failed to load fragment shader {}", shaderName);
-            abort();
         }
-
-        shader = static_cast<std::string*>(res->GetRawPointer());
+        abort();
     }
+
+    std::string* shader = static_cast<std::string*>(res->GetRawPointer());
 
     processor.load(*shader);
     processor.bind_include_loader(opengl_include_fs);

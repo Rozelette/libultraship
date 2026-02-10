@@ -15,6 +15,7 @@
 #include <vector>
 #include <list>
 #include <stack>
+#include <charconv>
 #include "fast/resource/type/Light.h"
 
 #ifndef _LANGUAGE_C
@@ -38,6 +39,7 @@
 #include "libultraship/libultra/os.h"
 
 #include <spdlog/fmt/fmt.h>
+#include <tinyxml2.h>
 
 std::stack<std::string> currentDir;
 
@@ -1500,7 +1502,11 @@ void Interpreter::GfxSpTri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx
     //    cc_options |= (shader.id << 17);
     //}
 
-    cc_options |= ((shader.id & 0xFFFF) << 16);
+    if (g_exec_stack.currShaderOverride() == 0) {
+        cc_options |= ((shader.id & 0xFFFF) << 16);
+    } else {
+        cc_options |= ((g_exec_stack.currShaderOverride() & 0xFFFF) << 16);
+    }
 
     ColorCombinerKey key;
     key.combine_mode = mRdp->combine_mode;
@@ -2631,19 +2637,28 @@ void* Interpreter::SegAddr(uintptr_t w1) {
 void GfxExecStack::start(F3DGfx* dlist) {
     while (!cmd_stack.empty())
         cmd_stack.pop();
+    while (!shader_id_override_stack.empty())
+        shader_id_override_stack.pop();
     gfx_path.clear();
     cmd_stack.push(dlist);
+    shader_id_override_stack.push(0);
     disp_stack.clear();
 }
 
 void GfxExecStack::stop() {
     while (!cmd_stack.empty())
         cmd_stack.pop();
+    while (!shader_id_override_stack.empty())
+        shader_id_override_stack.pop();
     gfx_path.clear();
 }
 
 F3DGfx*& GfxExecStack::currCmd() {
     return cmd_stack.top();
+}
+
+int16_t& GfxExecStack::currShaderOverride() {
+    return shader_id_override_stack.top();
 }
 
 void GfxExecStack::openDisp(const char* file, int line) {
@@ -2662,11 +2677,14 @@ void GfxExecStack::branch(F3DGfx* caller) {
     cmd_stack.push(nullptr);
     cmd_stack.push(old);
 
+    shader_id_override_stack.push(0);
+
     gfx_path.push_back(caller);
 }
 
 void GfxExecStack::call(F3DGfx* caller, F3DGfx* callee) {
     cmd_stack.push(callee);
+    shader_id_override_stack.push(0);
     gfx_path.push_back(caller);
 }
 
@@ -2674,12 +2692,14 @@ F3DGfx* GfxExecStack::ret() {
     F3DGfx* cmd = cmd_stack.top();
 
     cmd_stack.pop();
+    shader_id_override_stack.pop();
     if (!gfx_path.empty()) {
         gfx_path.pop_back();
     }
 
     while (cmd_stack.size() > 0 && cmd_stack.top() == nullptr) {
         cmd_stack.pop();
+        shader_id_override_stack.pop();
         if (!gfx_path.empty()) {
             gfx_path.pop_back();
         }
@@ -2718,11 +2738,8 @@ bool gfx_marker_handler_otr(F3DGfx** cmd0) {
         Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager()->HashToCString(hash);
     gfx->mMarkerOn = true;
 
-    if (gfx->mCurrentDisplayList.starts_with("scene")) {
-        int16_t which = gfx->mCurrentDisplayList.size() % 3 + 1;
-        gfx->mRdp->current_shader = { true, which, 0 };
-    } else {
-        gfx->mRdp->current_shader = { true, 0, 0 };
+    if (gfx->shader_overrides.contains(gfx->mCurrentDisplayList)) {
+        g_exec_stack.currShaderOverride() = gfx->GetShaderId(gfx->shader_overrides[gfx->mCurrentDisplayList]);
     }
 
     return false;
@@ -4186,12 +4203,6 @@ void Interpreter::SpReset() {
     mRsp->lookat[1].dir[2] = 0;
     CalculateNormalDir(&mRsp->lookat[0], mRsp->current_lookat_coeffs[0]);
     CalculateNormalDir(&mRsp->lookat[1], mRsp->current_lookat_coeffs[1]);
-
-    shader_ids.clear();
-    shader_ids.push_back(std::make_pair("shaders/opengl/default.shader.fs", Interpreter::ShaderOptions{}));
-    shader_ids.push_back(std::make_pair("shaders/opengl/test.shader.fs", Interpreter::ShaderOptions{ { "TEST", 0 }, { "TEST2", 0 } }));
-    shader_ids.push_back(std::make_pair("shaders/opengl/test.shader.fs", Interpreter::ShaderOptions{ { "TEST", 0 }, { "TEST2", 1 } }));
-    shader_ids.push_back(std::make_pair("shaders/opengl/test.shader.fs", Interpreter::ShaderOptions{ { "TEST", 0 }, { "TEST2", 2 } }));
 }
 
 void Interpreter::GetDimensions(uint32_t* width, uint32_t* height, int32_t* posX, int32_t* posY) {
@@ -4229,6 +4240,8 @@ void Interpreter::Init(class GfxWindowBackend* wapi, class GfxRenderingAPI* rapi
     }
 
     ucode_handler_index = UcodeHandlers::ucode_f3dex2;
+
+    GetShaderId("shaders/opengl/default.shader.fs");
 }
 
 void Interpreter::Destroy() {
@@ -4317,6 +4330,34 @@ void Interpreter::StartFrame() {
     }
 
     mFbActive = false;
+
+    // This should be in Init, but mods aren't initalized at that point
+    if (shader_overrides.size() == 0) {
+        std::shared_ptr<Ship::File> file =
+            Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager()->LoadFile("shaders/override.xml");
+        if (file != nullptr && file->IsLoaded) {
+            std::string fileString{ file->Buffer->data(), file->Buffer->size() };
+
+            tinyxml2::XMLDocument xml;
+            xml.Parse(fileString.c_str()); // TODO err
+            tinyxml2::XMLElement* list = xml.FirstChildElement("List");
+            if (xml.ErrorID() != 0) {
+                xml.PrintError();
+            }
+            if (list != nullptr) {
+                tinyxml2::XMLElement* override = list->FirstChildElement("Override");
+                while (override != nullptr) {
+                    std::string dl = override->Attribute("dl");
+                    std::string shader = override->Attribute("shader");
+
+                    shader_overrides[dl] = shader;
+                    GetShaderId(shader);
+
+                    override = override->NextSiblingElement("Override");
+                }
+            }
+        }
+    }
 }
 
 GfxExecStack g_exec_stack = {};
@@ -4702,6 +4743,48 @@ void Fast::gfx_lookup_shader_id(int16_t id, std::string& name, Interpreter::Shad
     Fast::Interpreter* interpreter = Fast::mInstance.lock().get();
     name = interpreter->shader_ids[id].first;
     options = interpreter->shader_ids[id].second;
+}
+
+int16_t Fast::Interpreter::GetShaderId(const std::string& idString) {
+    auto existingId = shader_id_map.find(idString);
+    if (existingId != shader_id_map.end()) {
+        return existingId->second;
+    }
+
+    // TODO errors
+    size_t optionStart = idString.find(':');
+    if (optionStart == std::string::npos) {
+        shader_ids.push_back(std::make_pair(idString, ShaderOptions{}));
+    } else {
+        std::string name = idString.substr(0, optionStart);
+        std::string optionsString = idString.substr(optionStart + 1);
+        ShaderOptions options;
+
+        for (size_t start = 0; start != std::string::npos;) {
+            if (optionsString[start] == ',') {
+                start++;
+            }
+            size_t nextOption = optionsString.find(',', start);
+            std::string option = optionsString.substr(start, nextOption - start);
+
+            size_t valueStart = option.find('=');
+            std::string optionName = option.substr(0, valueStart);
+            int32_t opTionValue = 0;
+            if (valueStart != std::string::npos) {
+                std::from_chars(option.data() + valueStart + 1, option.data() + option.size(), opTionValue);
+            }
+
+            options.insert({ optionName, opTionValue });
+
+            start = nextOption;
+        }
+
+        shader_ids.push_back(std::make_pair(name, options));
+    }
+
+    int16_t newShaderId = static_cast<int16_t>(shader_ids.size() - 1);
+    shader_id_map[idString] = newShaderId;
+    return newShaderId;
 }
 
 extern "C" int gfx_create_framebuffer(uint32_t width, uint32_t height, uint32_t native_width, uint32_t native_height,

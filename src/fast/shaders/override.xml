@@ -1,0 +1,5 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<List>
+    <Override dl="objects/object_link_child/gLinkChildLeftFootNearDL" shader="shaders/opengl/test.shader.fs:TEST,TEST2=0" />
+    <Override dl="objects/object_link_child/gLinkChildRightFootNearDL" shader="shaders/opengl/test.shader.fs:TEST,TEST2=1" />
+</List>

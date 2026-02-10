@@ -133,6 +133,7 @@ constexpr size_t MAX_SEGMENT_POINTERS = 16;
 struct GfxExecStack {
     // This is a dlist stack used to handle dlist calls.
     std::stack<F3DGfx*> cmd_stack = {};
+    std::stack<int16_t> shader_id_override_stack = {};
     // This is also a dlist stack but a std::vector is used to make it possible
     // to iterate on the elements.
     // The purpose of this is to identify an instruction at a poin in time
@@ -149,6 +150,7 @@ struct GfxExecStack {
     void start(F3DGfx* dlist);
     void stop();
     F3DGfx*& currCmd();
+    int16_t& currShaderOverride();
     void openDisp(const char* file, int line);
     void closeDisp();
     const std::vector<CodeDisp>& getDisp() const;
@@ -471,6 +473,8 @@ class Interpreter {
     static void TransposedMatrixMul(float res[3], const float a[3], const float b[4][4]);
     static void MatrixMul(float res[4][4], const float a[4][4], const float b[4][4]);
 
+    int16_t GetShaderId(const std::string& idString);
+
     RSP* mRsp;
     RDP* mRdp;
     RenderingState mRenderingState{};
@@ -515,8 +519,10 @@ class Interpreter {
 
     const std::unordered_map<Mtx*, MtxF>* mCurMtxReplacements;
     bool mMarkerOn; // This was originally a debug feature. Now it seems to control s2dex?
-    using ShaderOptions = std::unordered_map<std::string, int>;
+    std::unordered_map<std::string, std::string> shader_overrides;
+    using ShaderOptions = std::unordered_map<std::string, int32_t>;
     std::vector<std::pair<std::string, ShaderOptions>> shader_ids;
+    std::unordered_map<std::string, uint16_t> shader_id_map;
     int mInterpolationIndex;
     int mInterpolationIndexTarget;
 };
